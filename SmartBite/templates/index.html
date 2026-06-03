@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartBite</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="page-shell">
+    <header class="hero">
+      <div class="brand-icon" aria-hidden="true">🍽️</div>
+      <h1>SmartBite</h1>
+      <p>הסוכן החכם שלך לעולם המסעדות בישראל</p>
+    </header>
+
+    <section class="chat-card" aria-label="SmartBite chat">
+      <h2>ברוכים הבאים ל־SmartBite</h2>
+      <p class="subtitle">שאלו אותי כל דבר על מסעדות, המלצות, תפריטים וביקורות</p>
+      <div id="chatBox" class="chat-box"></div>
+      <div class="input-row">
+        <button id="sendBtn" type="button" onclick="sendMessage()">Send</button>
+        <input id="userInput" type="text" autocomplete="off" placeholder="לדוגמה: אני מחפשת מסעדה איטלקית במרכז עד ₪120" />
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Powered by restaurant, orders, and reviews data</span>
+      <span>Built with love for food lovers ♡</span>
+      <span>SmartBite © 2026</span>
+    </footer>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
