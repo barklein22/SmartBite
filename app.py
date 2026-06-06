@@ -863,13 +863,33 @@ def build_external_lookup_query(message: str, params: Dict[str, Any], candidates
 def short_place_description(place: Dict[str, Any], language: str = "he") -> str:
     name = place.get("name") or "המסעדה"
     address = place.get("address") or ""
-    if language == "he":
-        if address:
-            return f"{name} היא מסעדה שכדאי לבדוק באזור הזה. הנה הפרטים שמצאתי עליה:"
-        return f"{name} היא מסעדה שכדאי לבדוק. הנה הפרטים שמצאתי עליה:"
-    if address:
-        return f"{name} is a restaurant worth checking in this area. Here are the details I found:"
-    return f"{name} is a restaurant worth checking. Here are the details I found:"
+
+    if language != "he":
+        return f"{name} is a restaurant in this area. Here are the main details:"
+
+    try:
+        desc = gemini_generate(
+            """כתוב משפט אחד קצר בעברית על המסעדה.
+המשפט צריך להישמע טבעי ומקצועי.
+אל תשתמש באימוג'ים.
+אל תכתוב 'כדאי לבדוק באזור הזה'.
+אל תמציא פרטים ספציפיים כמו כוכבי מישלן אם אינך בטוח.
+החזר משפט אחד בלבד.""",
+            {
+                "restaurant_name": name,
+                "address": address
+            },
+            temperature=0.35,
+            timeout=5,
+        ).strip()
+
+        if desc:
+            return desc
+
+    except Exception:
+        pass
+
+    return f"{name} היא מסעדה שנמצאת באזור {address}." if address else f"{name} היא מסעדה שניתן למצוא עליה פרטים נוספים."
 
 
 def format_google_places_lookup(ext: Dict[str, Any], language: str = "he") -> str:
@@ -1069,15 +1089,28 @@ def format_anomalies() -> str:
 
 
 def natural_gemini_fallback(message: str) -> str:
+    msg = normalize_text(message)
+
+    if any(x in msg for x in ["היי", "שלום", "מה קורה", "מה נשמע", "hi", "hello"]):
+        return "היי, איך אפשר לעזור? אפשר לחפש מסעדה, לבדוק ביקורות, שעות עומס או לקבל מידע על מקום מסוים."
+
+    if any(x in msg for x in ["תודה", "thanks", "thank you"]):
+        return "בשמחה. אפשר להמשיך לשאול על מסעדות, ביקורות, שעות עומס או המלצות."
+
     try:
         return gemini_generate(
-            """You are SmartBite, a friendly restaurant AI agent. Answer naturally in the user's language. Stay only in the restaurant/food-place domain. Do not mention databases, internal sources, external sources, or APIs.""",
+            """You are SmartBite, a professional restaurant AI agent.
+Answer naturally and briefly in Hebrew.
+Stay only in the restaurant and food-place domain.
+Do not use emojis.
+Do not sound like a customer-service chatbot.
+Do not mention databases, internal sources, external sources, or APIs.""",
             {"message": message, "history": _context.get("conversation_history", [])[-6:]},
-            temperature=0.7,
+            temperature=0.45,
             timeout=6,
         )
     except Exception:
-        return "אני כאן 😊 אפשר לשאול אותי על מסעדות, המלצות, ביקורות, שעות עומס, מנות מומלצות או מסעדות דומות."
+        return "אפשר לשאול אותי על מסעדות, המלצות, ביקורות, שעות עומס, מנות מומלצות או מסעדות דומות."
 
 
 def answer_free_text(message: str) -> Dict[str, str]:
