@@ -1518,7 +1518,7 @@ def answer_free_text(message: str) -> Dict[str, str]:
 
         branch = select_branch(chain_candidates, params)
         if branch is None:
-            if intent in ["peak_hours", "opening_hours"]
+            if intent in ["peak_hours", "opening_hours"]:
                query = build_external_lookup_query(message. params, chain_candidates)
                ext = search_google_places(query, language=language)
 
