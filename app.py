@@ -1441,110 +1441,124 @@ def answer_free_text(message: str) -> Dict[str, str]:
         answer = "אני לא נותנת מתכונים, אבל יכולה לעזור למצוא מסעדה שמגישה את המנה הזו 😊"
         remember_conversation(message, answer)
         return {"message": answer}
+
     if intent == "off_topic":
         answer = "אני מתמחה במסעדות ואוכל 🍽️ אשמח לעזור בהמלצות, ביקורות, שעות עומס, מנות מומלצות או מסעדות דומות."
         remember_conversation(message, answer)
         return {"message": answer}
+
     if intent == "smalltalk":
         answer = natural_gemini_fallback(message)
         remember_conversation(message, answer)
         return {"message": answer}
 
-    # Anomaly model
     if intent == "anomalies":
         answer = format_anomalies()
         remember_conversation(message, answer)
         return {"message": answer}
 
-    # New recommendation requests must include location first.
     if intent == "recommendation" and has_any_param(params) and not has_location(params):
         _context["pending_question"] = {
             "intent": "recommendation",
             "params": params,
             "missing": "city_or_region",
         }
+
         cuisine_text = ""
         if params.get("cuisine"):
             cuisine_text = f" מסעדה בסגנון {cuisine_display(params.get('cuisine'))}"
+
         budget_text = ""
         if params.get("budget"):
             budget_text = f" עד {params.get('budget')} ₪"
+
         answer = f"מעולה 😊 באיזו עיר או אזור תרצי שאחפש{cuisine_text}{budget_text}?"
         remember_conversation(message, answer)
         return {"message": answer}
 
     chain_candidates = find_chain_candidates(message, pending_chain)
-    chain_name = clean_name(chain_candidates.iloc[0].get("name_he") if not chain_candidates.empty else (pending_chain or "המסעדה"))
+    chain_name = clean_name(
+        chain_candidates.iloc[0].get("name_he")
+        if not chain_candidates.empty
+        else (pending_chain or "המסעדה")
+    )
 
-    # Specific restaurant lookup: address, maps, phone, website, or "tell me about".
-    # This route is intentionally separated from recommendations so a lookup request
-    # will not return random internal recommendations when the restaurant is missing.
     if intent == "restaurant_lookup":
         query = build_external_lookup_query(message, params, chain_candidates)
         ext = search_google_places(query, language=language)
+
         if ext.get("available"):
             answer = format_google_places_lookup(ext, language=language)
             remember_conversation(message, answer)
             return {"message": answer}
 
-        # If Google Places is unavailable but the restaurant exists internally, return only basic internal details.
         branch = select_branch(chain_candidates, params) if not chain_candidates.empty else None
+
         if branch is not None:
             remember_restaurant(branch)
             answer = restaurant_card(branch)
         else:
             answer = natural_gemini_fallback(message)
+
         remember_conversation(message, answer)
         return {"message": answer}
 
-    # Branch-specific questions: ask for location if multiple branches and no location.
     if intent in ["reviews", "rating", "rating_trust", "peak_hours", "opening_hours", "recommended_dish", "menu", "similar_restaurants"] and not chain_candidates.empty:
         if should_ask_city_for_chain(intent, chain_candidates, params):
             answer = ask_city(chain_name, chain_candidates, intent, params)
             remember_conversation(message, answer)
             return {"message": answer}
 
-        # במסעדות דומות העיר היא אזור החיפוש של ההמלצות, לא בהכרח סניף של מסעדת הבסיס.
         if intent == "similar_restaurants":
             base = choose_base_restaurant_for_similarity(chain_candidates)
+
             if base is None:
                 answer = "לאיזו מסעדה תרצי שאחפש מסעדות דומות?"
             else:
                 remember_restaurant(base)
                 _context["pending_question"] = None
                 answer = format_similar(base, params)
+
             remember_conversation(message, answer)
             return {"message": answer}
 
         branch = select_branch(chain_candidates, params)
+
         if branch is None:
             if intent in ["peak_hours", "opening_hours"]:
-               query = build_external_lookup_query(message. params, chain_candidates)
-               ext = search_google_places(query, language=language)
+                query = build_external_lookup_query(message, params, chain_candidates)
+                ext = search_google_places(query, language=language)
 
-               if ext.get("available"):
-                   answer = format_google_places_lookup(ext, language=language)
-                   remember_conversation(message, answer)
-                   return {"message": answer}
-                   
+                if ext.get("available"):
+                    answer = format_google_places_lookup(ext, language=language)
+                    remember_conversation(message, answer)
+                    return {"message": answer}
+
             answer = format_no_branch_found(chain_name, params, chain_candidates, intent)
-            # לא מחזירים דירוג/סניף אחר כאשר העיר לא קיימת בדאטה.
+
             _context["pending_question"] = {
                 "intent": intent,
                 "chain_key": message_chain_alias(chain_name) or normalize_text(chain_name).replace(" ", ""),
                 "params": {k: v for k, v in params.items() if k not in ["city", "region"]},
                 "missing": "valid_city_or_region",
             }
+
             remember_conversation(message, answer)
             return {"message": answer}
+
         remember_restaurant(branch)
         _context["pending_question"] = None
+
         if intent in ["reviews", "rating"]:
             answer = format_reviews(branch)
         elif intent == "rating_trust":
             answer = format_rating_trust(branch)
         elif intent == "peak_hours":
             answer = format_peak(branch, params)
+        elif intent == "opening_hours":
+            query = build_external_lookup_query(message, params, chain_candidates)
+            ext = search_google_places(query, language=language)
+            answer = format_google_places_lookup(ext, language=language) if ext.get("available") else restaurant_card(branch)
         elif intent == "recommended_dish":
             answer = format_recommended_dish(branch)
         elif intent == "menu":
@@ -1554,31 +1568,28 @@ def answer_free_text(message: str) -> Dict[str, str]:
                 answer = f"מצאתי כמה מנות ב{row_to_dict(branch)['name']}:\n{items}"
             else:
                 answer = "לא מצאתי תפריט זמין למסעדה הזו."
-        elif intent == "similar_restaurants":
-            answer = format_similar(branch, params)
         else:
             answer = restaurant_card(branch)
+
         remember_conversation(message, answer)
         return {"message": answer}
 
-    # Similar without identifiable restaurant
     if intent == "similar_restaurants":
         if _context.get("last_restaurant_id"):
             df = load_restaurants()
             found = df[df["restaurant_id"].astype(str) == str(_context["last_restaurant_id"])]
+
             if not found.empty:
                 answer = format_similar(found.iloc[0], params)
             else:
                 answer = "לאיזו מסעדה תרצי שאחפש מסעדות דומות?"
         else:
             answer = "לאיזו מסעדה תרצי שאחפש מסעדות דומות?"
+
         remember_conversation(message, answer)
         return {"message": answer}
 
-   
-    # General recommendations after location was supplied.
     if intent == "recommendation" and has_location(params):
-
         has_style = bool(
             params.get("cuisine")
             or params.get("restaurant_type")
@@ -1590,28 +1601,27 @@ def answer_free_text(message: str) -> Dict[str, str]:
         )
 
         if not has_style:
-             _context["pending_question"] = {
-                 "intent": "recommendation",
-                  "params": params,
-                  "missing": "style_or_cuisine",
-              }
+            _context["pending_question"] = {
+                "intent": "recommendation",
+                "params": params,
+                "missing": "style_or_cuisine",
+            }
 
-              place = display_requested_place(params)
+            place = display_requested_place(params)
 
-              answer = (
-                  f"איזה סגנון מסעדה תרצי שאחפש ב{place}? "
-                  "אפשר למשל איטלקית, אסייתית, סושי, בשרית, טבעונית, מסעדת שף, בית קפה או מקום רומנטי."
-              )
+            answer = (
+                f"איזה סגנון מסעדה תרצי שאחפש ב{place}? "
+                "אפשר למשל איטלקית, אסייתית, סושי, בשרית, טבעונית, מסעדת שף, בית קפה או מקום רומנטי."
+            )
 
-              remember_conversation(message, answer)
-              return {"message": answer}
+            remember_conversation(message, answer)
+            return {"message": answer}
 
-         answer = format_recommendations(message, params)
-         _context["pending_question"] = None
-         remember_conversation(message, answer)
-         return {"message": answer}
+        answer = format_recommendations(message, params)
+        _context["pending_question"] = None
+        remember_conversation(message, answer)
+        return {"message": answer}
 
-    # If no clear params but restaurant-related, let Gemini answer naturally.
     answer = natural_gemini_fallback(message)
     remember_conversation(message, answer)
     return {"message": answer}
