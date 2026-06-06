@@ -899,15 +899,33 @@ def build_external_lookup_query(message: str, params: Dict[str, Any], candidates
 
 
 def short_place_description(place: Dict[str, Any], language: str = "he") -> str:
-    name = place.get("name") or "המסעדה"
-    address = place.get("address") or ""
-    if language == "he":
-        if address:
-            return f"{name} היא מסעדה שכדאי לבדוק באזור הזה. הנה הפרטים שמצאתי עליה:"
-        return f"{name} היא מסעדה שכדאי לבדוק. הנה הפרטים שמצאתי עליה:"
-    if address:
-        return f"{name} is a restaurant worth checking in this area. Here are the details I found:"
-    return f"{name} is a restaurant worth checking. Here are the details I found:"
+    name = place.get("name", "")
+    types = " ".join(place.get("types", []))
+
+    if language != "he":
+        return f"{name} is a restaurant worth checking out."
+
+    types = types.lower()
+
+    if "italian" in types:
+        return f"{name} מתמחה במטבח איטלקי ומציעה מנות קלאסיות לצד פרשנויות מודרניות."
+
+    if "japanese" in types or "sushi" in types:
+        return f"{name} מציעה חוויית אוכל יפנית עם דגש על סושי ומנות מהמזרח הרחוק."
+
+    if "asian" in types:
+        return f"{name} מתמחה במטבח אסייתי ומשלבת טעמים וסגנונות ממדינות שונות במזרח."
+
+    if "steak" in types or "meat" in types:
+        return f"{name} ידועה במנות בשר איכותיות ובחוויית אירוח מוקפדת."
+
+    if "seafood" in types or "fish" in types:
+        return f"{name} מתמחה בדגים ופירות ים ומציעה תפריט המבוסס על חומרי גלם טריים."
+
+    if "chef" in types:
+        return f"{name} היא מסעדת שף המציעה חוויה קולינרית ייחודית ותפריט יצירתי."
+
+    return f"{name} היא מסעדה פופולרית המושכת אליה סועדים רבים בזכות האוכל והאווירה."
 
 
 def format_google_places_lookup(ext: Dict[str, Any], language: str = "he") -> str:
