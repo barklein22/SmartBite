@@ -1063,17 +1063,14 @@ def format_recommended_dish(row: pd.Series) -> str:
 
 
 def format_recommendations(message: str, params: Dict[str, Any]) -> str:
+    recs = filter_restaurants(params)
+
     city = params.get("city")
     region = params.get("region")
     cuisine = params.get("cuisine")
-    budget = params.get("budget")
-    kosher = params.get("kosher")
 
     city_text = display_city(city) if city else ""
     cuisine_text = cuisine_display(cuisine) if cuisine else "מסעדות"
-
-    # חיפוש ראשוני לפי הפרמטרים שהמשתמש נתן
-    recs = recommend_restaurants(params)
 
     # אם אין תוצאות בעיר הספציפית — לא מחזירים עיר אחרת בלי להגיד
     if recs.empty:
@@ -1091,49 +1088,27 @@ def format_recommendations(message: str, params: Dict[str, Any]) -> str:
 
         return "לא מצאתי התאמה מדויקת. אפשר לנסות עיר, תקציב או סוג מטבח אחר."
 
-    # אם יש מעט מדי תוצאות בעיר, לא “ממציאים” תוצאות — מציגים את מה שיש
-    # ומוסיפים הצעה להרחיב
-    limited_results = recs.head(5)
+    ranked = tfidf_rank_restaurants(message, recs, limit=5)
 
-    lines = []
-    lines.append("מצאתי כמה אפשרויות שמתאימות למה שחיפשת:")
+    _context["last_results"] = [
+        safe_int(x) for x in ranked["restaurant_id"].head(5).tolist()
+    ]
 
-    for i, (_, r) in enumerate(limited_results.iterrows(), start=1):
-        name = r.get("name", "")
-        r_city = r.get("city", "")
-        r_cuisine = r.get("cuisine", "")
-        r_type = r.get("restaurant_type", "")
-        r_kosher = r.get("kosher", "")
-        r_rating = r.get("rating", "")
-        r_price = r.get("avg_price_per_person", "")
-        r_dish = r.get("recommended_dish", "")
+    cards = [
+        restaurant_card(row, i + 1)
+        for i, (_, row) in enumerate(ranked.head(5).iterrows())
+    ]
 
-        lines.append("")
-        lines.append(f"{i}. {name}")
-        if r_city:
-            lines.append(f"עיר: {r_city}")
-        if r_cuisine:
-            lines.append(f"מטבח: {r_cuisine}")
-        if r_type:
-            lines.append(f"סוג: {r_type}")
-        if r_kosher != "":
-            lines.append(f"כשרות: {r_kosher}")
-        if r_rating != "":
-            lines.append(f"דירוג: {r_rating}")
-        if r_price != "":
-            lines.append(f"מחיר ממוצע לאדם: {r_price}₪")
-        if r_dish:
-            lines.append(f"מנה מומלצת: {r_dish}")
+    response = "מצאתי כמה אפשרויות שמתאימות למה שחיפשת:\n\n" + "\n\n".join(cards)
 
     # אם המשתמש ביקש עיר מסוימת וקיבל מעט תוצאות — להציע הרחבה
-    if city and len(limited_results) < 3:
-        lines.append("")
-        lines.append(
-            f"מצאתי מעט אפשרויות ב{city_text}. "
+    if city and len(ranked) < 3:
+        response += (
+            f"\n\nמצאתי מעט אפשרויות ב{city_text}. "
             "אפשר להרחיב את החיפוש גם לערים קרובות."
         )
 
-    return "\n".join(lines)
+    return response
 
 def format_similar(base: pd.Series, params: Dict[str, Any]) -> str:
     similar = recommend_similar_restaurants(base, params, limit=5)
