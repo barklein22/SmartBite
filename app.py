@@ -321,11 +321,24 @@ def cuisine_display(value: Any) -> str:
     return mapping.get(str(value), str(value))
 
 INTENT_WORDS = {
+    "rating_trust": [
+        "לסמוך על הדירוג",
+        "אפשר לסמוך",
+        "אמינות הדירוג",
+        "הדירוג אמין",
+        "דירוג אמין",
+        "הדירוג אמינה",
+        "האם הדירוג אמין",
+        "אפשר להאמין לדירוג",
+        "האם אפשר להאמין לדירוג",
+        "trust rating",
+        "rating trust",
+        "reliable rating"
+    ],
     "reviews": ["ביקורות", "חוות דעת", "reviews", "review"],
     "peak_hours": ["שעות עומס", "עומס", "עמוס", "busy", "peak"],
     "recommended_dish": ["מנה מומלצת", "המנה המומלצת", "מה לאכול", "dish", "recommended dish"],
     "similar_restaurants": ["דומות", "דומה", "דומים", "בסגנון", "כמו", "similar", "like"],
-    "rating_trust": ["לסמוך על הדירוג", "אפשר לסמוך", "אמינות הדירוג", "הדירוג אמין", "דירוג אמין", "trust rating", "rating trust", "reliable rating"],
     "anomalies": ["אנומל", "חריג", "חריגות", "חשוד", "חשודות", "isolation", "anomaly"],
     "menu": ["תפריט", "מנות", "menu"],
     "opening_hours": ["שעות פתיחה", "פתוח", "פתיחה", "opening"],
@@ -465,40 +478,75 @@ def detect_intent(message: str) -> str:
 
 def extract_params(message: str) -> Dict[str, Any]:
     msg = normalize_text(message)
-    params: Dict[str, Any] = {"city": None, "region": None, "cuisine": None, "kosher": None, "price_level": None, "budget": None, "rating_min": None, "suitable_for": None}
+
+    params: Dict[str, Any] = {
+        "city": None,
+        "region": None,
+        "cuisine": None,
+        "kosher": None,
+        "price_level": None,
+        "budget": None,
+        "rating_min": None,
+        "suitable_for": None,
+        "restaurant_type": None,
+    }
+
     for heb, eng in sorted(CITY_MAP.items(), key=lambda x: len(x[0]), reverse=True):
         if normalize_text(heb) in msg:
             params["city"] = eng
             params["region"] = CITY_TO_REGION.get(eng)
             break
+
     for heb, eng in REGION_MAP.items():
         if normalize_text(heb) in msg:
             params["region"] = eng
+
     for heb, eng in sorted(CUISINE_MAP.items(), key=lambda x: len(x[0]), reverse=True):
         if normalize_text(heb) in msg:
             params["cuisine"] = eng
             break
+
+    if any(w in msg for w in ["מסעדת שף", "שף", "chef"]):
+        params["restaurant_type"] = "Chef"
+
+    elif any(w in msg for w in ["בית קפה", "קפה", "cafe"]):
+        params["restaurant_type"] = "Cafe"
+
+    elif any(w in msg for w in ["בר", "bar"]):
+        params["restaurant_type"] = "Bar"
+
     if "כשר" in msg or "כשרה" in msg or "כשרות" in msg or "kosher" in msg:
         params["kosher"] = "No" if any(w in msg for w in ["לא כשר", "בלי כשרות", "non kosher"]) else "Yes"
+
     if any(w in msg for w in ["זול", "זולה", "cheap"]):
         params["price_level"] = "Cheap"
+
     elif any(w in msg for w in ["בינוני", "סביר", "medium"]):
         params["price_level"] = "Medium"
-    elif any(w in msg for w in ["יקר", "יוקרתי", "expensive"]):
+
+    elif any(w in msg for w in ["יקר", "יוקרתי", "יוקרתית", "expensive"]):
         params["price_level"] = "Expensive"
+
     nums = [int(x) for x in re.findall(r"\d+", msg)]
+
     if nums and any(w in msg for w in ["עד", "תקציב", "שקל", "₪", "מחיר", "price", "budget"]):
         params["budget"] = max(nums)
+
     if nums and any(w in msg for w in ["דירוג", "כוכבים", "rating"]):
         params["rating_min"] = min(max(nums), 5)
-    if any(w in msg for w in ["משפחה", "ילדים", "famil"]):
+
+    if any(w in msg for w in ["משפחה", "משפחתי", "משפחתית", "ילדים", "famil"]):
         params["suitable_for"] = "Families"
-    elif any(w in msg for w in ["דייט", "זוג", "רומנט", "date", "couple"]):
+
+    elif any(w in msg for w in ["דייט", "זוג", "זוגי", "רומנט", "רומנטי", "רומנטית", "date", "couple"]):
         params["suitable_for"] = "Couples"
+
     elif any(w in msg for w in ["חברים", "סטודנטים", "friends"]):
         params["suitable_for"] = "Friends"
+
     elif any(w in msg for w in ["עסקי", "פגישה", "business"]):
         params["suitable_for"] = "Business"
+
     return params
 
 
@@ -712,30 +760,119 @@ def filter_restaurants(params: Dict[str, Any]) -> pd.DataFrame:
     df = load_restaurants()
     if df.empty:
         return df
+
     result = df.copy()
+
     if params.get("city"):
-        result = result[result["city"].astype(str).str.lower() == str(params["city"]).lower()]
+        result = result[
+            result["city"].astype(str).str.lower()
+            == str(params["city"]).lower()
+        ]
+
     elif params.get("region"):
-        result = result[result["region"].astype(str).str.lower() == str(params["region"]).lower()]
+        result = result[
+            result["region"].astype(str).str.lower()
+            == str(params["region"]).lower()
+        ]
+
     if params.get("cuisine"):
         cuisine = str(params["cuisine"]).lower()
-        result = result[result["cuisine"].astype(str).str.lower().str.contains(re.escape(cuisine), na=False)]
+        result = result[
+            result["cuisine"].astype(str).str.lower().str.contains(
+                re.escape(cuisine),
+                na=False
+            )
+        ]
+
+    if params.get("restaurant_type"):
+        restaurant_type = str(params["restaurant_type"]).lower()
+
+        type_en = result.get(
+            "restaurant_type",
+            pd.Series([""] * len(result), index=result.index)
+        ).astype(str).str.lower()
+
+        type_he = result.get(
+            "restaurant_type_he",
+            pd.Series([""] * len(result), index=result.index)
+        ).astype(str).str.lower()
+
+        if restaurant_type == "chef":
+            result = result[
+                type_en.str.contains("chef", na=False)
+                | type_he.str.contains("שף", na=False)
+            ]
+
+        elif restaurant_type == "cafe":
+            result = result[
+                type_en.str.contains("cafe", na=False)
+                | type_he.str.contains("קפה", na=False)
+            ]
+
+        elif restaurant_type == "bar":
+            result = result[
+                type_en.str.contains("bar", na=False)
+                | type_he.str.contains("בר", na=False)
+            ]
+
     if params.get("kosher"):
-        result = result[result["kosher"].astype(str).str.lower() == str(params["kosher"]).lower()]
+        result = result[
+            result["kosher"].astype(str).str.lower()
+            == str(params["kosher"]).lower()
+        ]
+
     if params.get("price_level"):
-        result = result[result["price_level"].astype(str).str.lower() == str(params["price_level"]).lower()]
+        result = result[
+            result["price_level"].astype(str).str.lower()
+            == str(params["price_level"]).lower()
+        ]
+
     if params.get("budget"):
-        result = result[result["avg_price_per_person"] <= safe_float(params["budget"])]
+        result = result[
+            result["avg_price_per_person"]
+            <= safe_float(params["budget"])
+        ]
+
     if params.get("rating_min"):
-        result = result[result["rating"] >= safe_float(params["rating_min"])]
+        result = result[
+            result["rating"]
+            >= safe_float(params["rating_min"])
+        ]
+
     if params.get("suitable_for"):
         sf = str(params["suitable_for"])
-        result = result[result["suitable_for"].astype(str).str.contains(sf, case=False, na=False) | result["suitable_for_he"].astype(str).str.contains(sf, case=False, na=False)]
+
+        suitable_for_en = result.get(
+            "suitable_for",
+            pd.Series([""] * len(result), index=result.index)
+        ).astype(str)
+
+        suitable_for_he = result.get(
+            "suitable_for_he",
+            pd.Series([""] * len(result), index=result.index)
+        ).astype(str)
+
+        result = result[
+            suitable_for_en.str.contains(sf, case=False, na=False)
+            | suitable_for_he.str.contains(sf, case=False, na=False)
+        ]
+
     if result.empty:
         return result
+
     result = result.copy()
-    known = result.get("is_known_recommended", pd.Series([""] * len(result), index=result.index)).astype(str).str.lower().eq("yes").astype(float)
-    result["rank_score"] = result["rating"] * 2 + known * 1.5 - result["avg_price_per_person"] / 1000
+
+    known = result.get(
+        "is_known_recommended",
+        pd.Series([""] * len(result), index=result.index)
+    ).astype(str).str.lower().eq("yes").astype(float)
+
+    result["rank_score"] = (
+        result["rating"] * 2
+        + known * 1.5
+        - result["avg_price_per_person"] / 1000
+    )
+
     return result.sort_values(["rank_score", "rating"], ascending=False)
 
 # ---------------------------------------------------------------------
@@ -776,25 +913,119 @@ def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
 def recommend_similar_restaurants(row: Optional[pd.Series], params: Dict[str, Any], limit: int = 5) -> pd.DataFrame:
     if row is None:
         return pd.DataFrame()
+
     df = load_restaurants()
+
     if df.empty or cosine_similarity is None:
         return pd.DataFrame()
+
     candidates = df.copy()
+
     if params.get("city"):
-        candidates = candidates[candidates["city"].astype(str).str.lower() == str(params["city"]).lower()]
+        candidates = candidates[
+            candidates["city"].astype(str).str.lower()
+            == str(params["city"]).lower()
+        ]
+
     elif params.get("region"):
-        candidates = candidates[candidates["region"].astype(str).str.lower() == str(params["region"]).lower()]
+        candidates = candidates[
+            candidates["region"].astype(str).str.lower()
+            == str(params["region"]).lower()
+        ]
+
     if candidates.empty:
-        candidates = df.copy()
-    matrix_all = build_feature_matrix(pd.concat([pd.DataFrame([row]), candidates], ignore_index=True)).fillna(0)
+        return pd.DataFrame()
+
+    target_id = safe_int(row.get("restaurant_id"))
+
+    candidates = candidates[
+        candidates["restaurant_id"].astype(str) != str(target_id)
+    ].copy()
+
+    if candidates.empty:
+        return pd.DataFrame()
+
+    base_cuisine = str(row.get("cuisine") or "").lower()
+    base_type = str(row.get("restaurant_type") or "").lower()
+    base_price = str(row.get("price_level") or "").lower()
+    base_kosher = str(row.get("kosher") or "").lower()
+
+    # שלב 1: קודם מנסים למצוא דמיון קשיח לפי מטבח או סוג מסעדה.
+    strict = candidates.copy()
+
+    if base_cuisine:
+        same_cuisine = strict[
+            strict["cuisine"].astype(str).str.lower() == base_cuisine
+        ]
+    else:
+        same_cuisine = pd.DataFrame()
+
+    if base_type:
+        same_type = strict[
+            strict["restaurant_type"].astype(str).str.lower() == base_type
+        ]
+    else:
+        same_type = pd.DataFrame()
+
+    strict_matches = pd.concat([same_cuisine, same_type]).drop_duplicates()
+
+    # אם מצאנו מספיק תוצאות קשורות, משתמשים בהן בלבד.
+    # זה מונע מצב שארומה תחזיר פיצה, או ג׳פניקה תחזיר מסעדות לא אסייתיות.
+    if len(strict_matches) >= 3:
+        candidates = strict_matches.copy()
+
+    # שלב 2: מחשבים Cosine Similarity על המועמדים שנותרו.
+    matrix_all = build_feature_matrix(
+        pd.concat([pd.DataFrame([row]), candidates], ignore_index=True)
+    ).fillna(0)
+
     target_vec = matrix_all.iloc[[0]]
     cand_matrix = matrix_all.iloc[1:]
+
     sims = cosine_similarity(target_vec, cand_matrix).flatten()
+
     result = candidates.copy().reset_index(drop=True)
     result["similarity_score"] = sims
-    target_id = safe_int(row.get("restaurant_id"))
-    result = result[result["restaurant_id"].astype(str) != str(target_id)]
-    result = result.sort_values(["similarity_score", "rating"], ascending=False).head(limit)
+
+    # בונוס התאמה כדי לחזק תוצאות שבאמת דומות.
+    result["similarity_bonus"] = 0.0
+
+    if base_cuisine:
+        result.loc[
+            result["cuisine"].astype(str).str.lower() == base_cuisine,
+            "similarity_bonus"
+        ] += 0.30
+
+    if base_type:
+        result.loc[
+            result["restaurant_type"].astype(str).str.lower() == base_type,
+            "similarity_bonus"
+        ] += 0.30
+
+    if base_price:
+        result.loc[
+            result["price_level"].astype(str).str.lower() == base_price,
+            "similarity_bonus"
+        ] += 0.10
+
+    if base_kosher:
+        result.loc[
+            result["kosher"].astype(str).str.lower() == base_kosher,
+            "similarity_bonus"
+        ] += 0.05
+
+    result["final_similarity_score"] = (
+        result["similarity_score"]
+        + result["similarity_bonus"]
+    )
+
+    result = result.sort_values(
+        ["final_similarity_score", "rating"],
+        ascending=False
+    ).head(limit)
+
+    result["similarity_score"] = result["final_similarity_score"]
+
     return result
 
 
@@ -1287,6 +1518,15 @@ def answer_free_text(message: str) -> Dict[str, str]:
 
         branch = select_branch(chain_candidates, params)
         if branch is None:
+            if intent in ["peak_hours", "opening_hours"]
+               query = build_external_lookup_query(message. params, chain_candidates)
+               ext = search_google_places(query, language=language)
+
+               if ext.get("available"):
+                   answer = format_google_places_lookup(ext, language=language)
+                   remember_conversation(message, answer)
+                   return {"message": answer}
+                   
             answer = format_no_branch_found(chain_name, params, chain_candidates, intent)
             # לא מחזירים דירוג/סניף אחר כאשר העיר לא קיימת בדאטה.
             _context["pending_question"] = {
@@ -1335,12 +1575,41 @@ def answer_free_text(message: str) -> Dict[str, str]:
         remember_conversation(message, answer)
         return {"message": answer}
 
+   
     # General recommendations after location was supplied.
     if intent == "recommendation" and has_location(params):
-        answer = format_recommendations(message, params)
-        _context["pending_question"] = None
-        remember_conversation(message, answer)
-        return {"message": answer}
+
+        has_style = bool(
+            params.get("cuisine")
+            or params.get("restaurant_type")
+            or params.get("kosher")
+            or params.get("price_level")
+            or params.get("budget")
+            or params.get("rating_min")
+            or params.get("suitable_for")
+        )
+
+        if not has_style:
+             _context["pending_question"] = {
+                 "intent": "recommendation",
+                  "params": params,
+                  "missing": "style_or_cuisine",
+              }
+
+              place = display_requested_place(params)
+
+              answer = (
+                  f"איזה סגנון מסעדה תרצי שאחפש ב{place}? "
+                  "אפשר למשל איטלקית, אסייתית, סושי, בשרית, טבעונית, מסעדת שף, בית קפה או מקום רומנטי."
+              )
+
+              remember_conversation(message, answer)
+              return {"message": answer}
+
+         answer = format_recommendations(message, params)
+         _context["pending_question"] = None
+         remember_conversation(message, answer)
+         return {"message": answer}
 
     # If no clear params but restaurant-related, let Gemini answer naturally.
     answer = natural_gemini_fallback(message)
