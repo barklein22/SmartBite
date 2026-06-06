@@ -465,20 +465,7 @@ def detect_intent(message: str) -> str:
 
 def extract_params(message: str) -> Dict[str, Any]:
     msg = normalize_text(message)
-    params: Dict[str, Any] = {
-        "city": None,
-        "region": None,
-        "cuisine": None,
-        "kosher": None,
-        "price_level": None,
-        "budget": None,
-        "rating_min": None,
-        "suitable_for": None,
-        # מאפשר לסנן לפי מילים כמו: מסעדת שף, בית קפה, בר
-        "restaurant_type": None,
-        # מאפשר לשמור הקשר של אווירה כמו: יוקרתי, רומנטי, משפחתי
-        "ambiance": None,
-    }
+    params: Dict[str, Any] = {"city": None, "region": None, "cuisine": None, "kosher": None, "price_level": None, "budget": None, "rating_min": None, "suitable_for": None}
     for heb, eng in sorted(CITY_MAP.items(), key=lambda x: len(x[0]), reverse=True):
         if normalize_text(heb) in msg:
             params["city"] = eng
@@ -491,28 +478,6 @@ def extract_params(message: str) -> Dict[str, Any]:
         if normalize_text(heb) in msg:
             params["cuisine"] = eng
             break
-
-    # זיהוי סוג מסעדה / קונספט, כדי ששאלות כמו "מסעדת שף בירושלים"
-    # לא יהפכו לחיפוש כללי של מסעדות בירושלים בלבד.
-    if any(x in msg for x in ["שף", "מסעדת שף", "chef"]):
-        params["restaurant_type"] = "Chef"
-    elif any(x in msg for x in ["בית קפה", "קפה", "cafe"]):
-        params["restaurant_type"] = "Cafe"
-    elif any(x in msg for x in ["בר", "bar"]):
-        params["restaurant_type"] = "Bar"
-
-    # זיהוי אווירה/התאמה. חלק מזה כבר קיים בהמשך דרך suitable_for,
-    # אבל כאן אנחנו שומרים גם שדה מפורש כדי לא לאבד משמעות בשאלות טבעיות.
-    if any(x in msg for x in ["רומנטי", "רומנטית", "דייט", "זוג", "זוגי"]):
-        params["ambiance"] = "Romantic"
-        params["suitable_for"] = params.get("suitable_for") or "Couples"
-    elif any(x in msg for x in ["משפחה", "משפחתי", "משפחתית", "ילדים"]):
-        params["ambiance"] = "Family"
-        params["suitable_for"] = params.get("suitable_for") or "Families"
-    elif any(x in msg for x in ["יוקרתי", "יוקרתית", "פיין דיינינג", "fine dining"]):
-        params["ambiance"] = "Luxury"
-        params["price_level"] = params.get("price_level") or "Expensive"
-
     if "כשר" in msg or "כשרה" in msg or "כשרות" in msg or "kosher" in msg:
         params["kosher"] = "No" if any(w in msg for w in ["לא כשר", "בלי כשרות", "non kosher"]) else "Yes"
     if any(w in msg for w in ["זול", "זולה", "cheap"]):
@@ -755,12 +720,6 @@ def filter_restaurants(params: Dict[str, Any]) -> pd.DataFrame:
     if params.get("cuisine"):
         cuisine = str(params["cuisine"]).lower()
         result = result[result["cuisine"].astype(str).str.lower().str.contains(re.escape(cuisine), na=False)]
-    if params.get("restaurant_type"):
-        rt = str(params["restaurant_type"]).lower()
-        result = result[
-            result["restaurant_type"].astype(str).str.lower().str.contains(re.escape(rt), na=False)
-            | result.get("restaurant_type_he", pd.Series([""] * len(result), index=result.index)).astype(str).str.contains("שף" if rt == "chef" else rt, case=False, na=False)
-        ]
     if params.get("kosher"):
         result = result[result["kosher"].astype(str).str.lower() == str(params["kosher"]).lower()]
     if params.get("price_level"):
@@ -940,33 +899,16 @@ def build_external_lookup_query(message: str, params: Dict[str, Any], candidates
 
 
 def short_place_description(place: Dict[str, Any], language: str = "he") -> str:
-    name = place.get("name", "")
-    types = " ".join(place.get("types", []))
+    name = place.get("name") or "המסעדה"
+    address = place.get("address") or ""
+    if language == "he":
+        if address:
+            return f"{name} היא מסעדה שכדאי לבדוק באזור הזה. הנה הפרטים שמצאתי עליה:"
+        return f"{name} היא מסעדה שכדאי לבדוק. הנה הפרטים שמצאתי עליה:"
+    if address:
+        return f"{name} is a restaurant worth checking in this area. Here are the details I found:"
+    return f"{name} is a restaurant worth checking. Here are the details I found:"
 
-    if language != "he":
-        return f"{name} is a restaurant worth checking out."
-
-    types = types.lower()
-
-    if "italian" in types:
-        return f"{name} מתמחה במטבח איטלקי ומציעה מנות קלאסיות לצד פרשנויות מודרניות."
-
-    if "japanese" in types or "sushi" in types:
-        return f"{name} מציעה חוויית אוכל יפנית עם דגש על סושי ומנות מהמזרח הרחוק."
-
-    if "asian" in types:
-        return f"{name} מתמחה במטבח אסייתי ומשלבת טעמים וסגנונות ממדינות שונות במזרח."
-
-    if "steak" in types or "meat" in types:
-        return f"{name} ידועה במנות בשר איכותיות ובחוויית אירוח מוקפדת."
-
-    if "seafood" in types or "fish" in types:
-        return f"{name} מתמחה בדגים ופירות ים ומציעה תפריט המבוסס על חומרי גלם טריים."
-
-    if "chef" in types:
-        return f"{name} היא מסעדת שף המציעה חוויה קולינרית ייחודית ותפריט יצירתי."
-
-    return f"{name} היא מסעדה פופולרית המושכת אליה סועדים רבים בזכות האוכל והאווירה."
 
 def format_google_places_lookup(ext: Dict[str, Any], language: str = "he") -> str:
     if not ext.get("available") or not ext.get("places"):
@@ -1064,51 +1006,13 @@ def format_recommended_dish(row: pd.Series) -> str:
 
 def format_recommendations(message: str, params: Dict[str, Any]) -> str:
     recs = filter_restaurants(params)
-
-    city = params.get("city")
-    region = params.get("region")
-    cuisine = params.get("cuisine")
-
-    city_text = display_city(city) if city else ""
-    cuisine_text = cuisine_display(cuisine) if cuisine else "מסעדות"
-
-    # אם אין תוצאות בעיר הספציפית — לא מחזירים עיר אחרת בלי להגיד
     if recs.empty:
-        if city:
-            return (
-                f"לא מצאתי מספיק אפשרויות של {cuisine_text} ב{city_text}. "
-                "אפשר להרחיב את החיפוש לעיר קרובה כמו תל אביב, רמת גן או גבעתיים?"
-            )
-
-        if region:
-            return (
-                f"לא מצאתי מספיק אפשרויות של {cuisine_text} באזור שבחרת. "
-                "אפשר לנסות אזור אחר או להרחיב את החיפוש?"
-            )
-
-        return "לא מצאתי התאמה מדויקת. אפשר לנסות עיר, תקציב או סוג מטבח אחר."
-
+        return "לא מצאתי התאמה מדויקת. אפשר לנסות עיר אחרת, תקציב אחר או סוג מטבח אחר."
     ranked = tfidf_rank_restaurants(message, recs, limit=5)
+    _context["last_results"] = [safe_int(x) for x in ranked["restaurant_id"].head(5).tolist()]
+    cards = [restaurant_card(row, i + 1) for i, (_, row) in enumerate(ranked.head(5).iterrows())]
+    return "מצאתי לך כמה אפשרויות מתאימות 😊\n\n" + "\n\n".join(cards)
 
-    _context["last_results"] = [
-        safe_int(x) for x in ranked["restaurant_id"].head(5).tolist()
-    ]
-
-    cards = [
-        restaurant_card(row, i + 1)
-        for i, (_, row) in enumerate(ranked.head(5).iterrows())
-    ]
-
-    response = "מצאתי כמה אפשרויות שמתאימות למה שחיפשת:\n\n" + "\n\n".join(cards)
-
-    # אם המשתמש ביקש עיר מסוימת וקיבל מעט תוצאות — להציע הרחבה
-    if city and len(ranked) < 3:
-        response += (
-            f"\n\nמצאתי מעט אפשרויות ב{city_text}. "
-            "אפשר להרחיב את החיפוש גם לערים קרובות."
-        )
-
-    return response
 
 def format_similar(base: pd.Series, params: Dict[str, Any]) -> str:
     similar = recommend_similar_restaurants(base, params, limit=5)
@@ -1200,7 +1104,6 @@ def format_anomalies() -> str:
 # ---------------------------------------------------------------------
 # Main agent
 # ---------------------------------------------------------------------
-
 
 import random
 
@@ -1366,16 +1269,6 @@ def answer_free_text(message: str) -> Dict[str, str]:
 
         branch = select_branch(chain_candidates, params)
         if branch is None:
-            # אם מדובר בשעות עומס/שעות פתיחה ואין סניף בעיר בדאטה,
-            # מנסים קודם מקור חיצוני לפני שמחזירים "לא מצאתי סניף".
-            if intent in ["peak_hours", "opening_hours"]:
-                query = build_external_lookup_query(message, params, chain_candidates)
-                ext = search_google_places(query, language=language)
-                if ext.get("available"):
-                    answer = format_google_places_lookup(ext, language=language)
-                    remember_conversation(message, answer)
-                    return {"message": answer}
-
             answer = format_no_branch_found(chain_name, params, chain_candidates, intent)
             # לא מחזירים דירוג/סניף אחר כאשר העיר לא קיימת בדאטה.
             _context["pending_question"] = {
