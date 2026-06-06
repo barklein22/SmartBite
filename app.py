@@ -861,36 +861,33 @@ def build_external_lookup_query(message: str, params: Dict[str, Any], candidates
 
 
 def short_place_description(place: Dict[str, Any], language: str = "he") -> str:
-    name = place.get("name") or "המסעדה"
-    address = place.get("address") or ""
+    name = place.get("name", "")
+    types = " ".join(place.get("types", []))
 
     if language != "he":
-        return f"{name} is a restaurant in this area. Here are the main details:"
+        return f"{name} is a restaurant worth checking out."
 
-    try:
-        desc = gemini_generate(
-            """כתוב משפט אחד קצר בעברית על המסעדה.
-המשפט צריך להישמע טבעי ומקצועי.
-אל תשתמש באימוג'ים.
-אל תכתוב 'כדאי לבדוק באזור הזה'.
-אל תמציא פרטים ספציפיים כמו כוכבי מישלן אם אינך בטוח.
-החזר משפט אחד בלבד.""",
-            {
-                "restaurant_name": name,
-                "address": address
-            },
-            temperature=0.35,
-            timeout=5,
-        ).strip()
+    types = types.lower()
 
-        if desc:
-            return desc
+    if "italian" in types:
+        return f"{name} מתמחה במטבח איטלקי ומציעה מנות קלאסיות לצד פרשנויות מודרניות."
 
-    except Exception:
-        pass
+    if "japanese" in types or "sushi" in types:
+        return f"{name} מציעה חוויית אוכל יפנית עם דגש על סושי ומנות מהמזרח הרחוק."
 
-    return f"{name} היא מסעדה שנמצאת באזור {address}." if address else f"{name} היא מסעדה שניתן למצוא עליה פרטים נוספים."
+    if "asian" in types:
+        return f"{name} מתמחה במטבח אסייתי ומשלבת טעמים וסגנונות ממדינות שונות במזרח."
 
+    if "steak" in types or "meat" in types:
+        return f"{name} ידועה במנות בשר איכותיות ובחוויית אירוח מוקפדת."
+
+    if "seafood" in types or "fish" in types:
+        return f"{name} מתמחה בדגים ופירות ים ומציעה תפריט המבוסס על חומרי גלם טריים."
+
+    if "chef" in types:
+        return f"{name} היא מסעדת שף המציעה חוויה קולינרית ייחודית ותפריט יצירתי."
+
+    return f"{name} היא מסעדה פופולרית המושכת אליה סועדים רבים בזכות האוכל והאווירה."
 
 def format_google_places_lookup(ext: Dict[str, Any], language: str = "he") -> str:
     if not ext.get("available") or not ext.get("places"):
@@ -1088,30 +1085,78 @@ def format_anomalies() -> str:
 # ---------------------------------------------------------------------
 
 
+import random
+
 def natural_gemini_fallback(message: str) -> str:
     msg = normalize_text(message)
 
-    if any(x in msg for x in ["היי", "שלום", "מה קורה", "מה נשמע", "hi", "hello"]):
-        return "היי, איך אפשר לעזור? אפשר לחפש מסעדה, לבדוק ביקורות, שעות עומס או לקבל מידע על מקום מסוים."
+    greetings = [
+        "היי, איך אפשר לעזור?",
+        "שלום, במה אוכל לעזור היום?",
+        "היי, מה תרצי לבדוק?",
+        "שלום, אפשר לשאול אותי על מסעדות, ביקורות והמלצות.",
+        "היי, מחפשת מסעדה או מידע על מקום מסוים?",
+        "שלום, איך אפשר לעזור לך למצוא את המקום המתאים?"
+    ]
 
-    if any(x in msg for x in ["תודה", "thanks", "thank you"]):
-        return "בשמחה. אפשר להמשיך לשאול על מסעדות, ביקורות, שעות עומס או המלצות."
+    small_talk = [
+        "הכל טוב, תודה. איך אפשר לעזור?",
+        "מצוין, תודה ששאלת. מה תרצי לבדוק?",
+        "הכל בסדר. מחפשת מסעדה או המלצה?",
+        "מעולה. איך אפשר לעזור היום?",
+        "הכל טוב כאן. יש מסעדה או אזור שמעניין אותך?",
+        "הכל מצוין. מחפשת מקום טוב לאכול או מידע על מסעדה?",
+        "לא רע בכלל. איך אפשר לעזור?"
+    ]
+
+    if any(x in msg for x in [
+        "היי",
+        "הי",
+        "שלום",
+        "בוקר טוב",
+        "ערב טוב",
+        "צהריים טובים",
+        "hi",
+        "hello"
+    ]):
+        return random.choice(greetings)
+
+    if any(x in msg for x in [
+        "מה קורה",
+        "מה נשמע",
+        "מה שלומך",
+        "מה שלומך היום",
+        "מה העניינים",
+        "מה חדש",
+        "איך הולך",
+        "איך אתה",
+        "איך את"
+    ]):
+        return random.choice(small_talk)
 
     try:
         return gemini_generate(
-            """You are SmartBite, a professional restaurant AI agent.
-Answer naturally and briefly in Hebrew.
-Stay only in the restaurant and food-place domain.
-Do not use emojis.
-Do not sound like a customer-service chatbot.
-Do not mention databases, internal sources, external sources, or APIs.""",
-            {"message": message, "history": _context.get("conversation_history", [])[-6:]},
+            """
+You are SmartBite, a professional restaurant recommendation agent.
+
+Rules:
+- Answer naturally in Hebrew.
+- Do not use emojis.
+- Sound like a human restaurant assistant.
+- Stay in restaurant and food context.
+- Do not mention databases, APIs, Gemini, Google Maps or external sources.
+- Keep answers concise and conversational.
+""",
+            {
+                "message": message,
+                "history": _context.get("conversation_history", [])[-6:]
+            },
             temperature=0.45,
             timeout=6,
         )
-    except Exception:
-        return "אפשר לשאול אותי על מסעדות, המלצות, ביקורות, שעות עומס, מנות מומלצות או מסעדות דומות."
 
+    except Exception:
+        return "אפשר לשאול אותי על מסעדות, ביקורות, שעות עומס, מנות מומלצות או מסעדות דומות."
 
 def answer_free_text(message: str) -> Dict[str, str]:
     message = (message or "").strip()
